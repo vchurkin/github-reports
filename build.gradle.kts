@@ -13,7 +13,7 @@ group = "com.vchurkin"
 version = "0.0.1"
 
 application {
-    mainClass.set("com.vchurkin.github.reports.Main")
+    mainClass.set("com.vchurkin.github.reports.MainKt")
 }
 
 repositories {

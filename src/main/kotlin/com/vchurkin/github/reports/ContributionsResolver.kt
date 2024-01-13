@@ -30,8 +30,8 @@ class ContributionsResolver(
                 break
 
             commits
-                .filter { it.author != null }
-                .groupingBy { it.author!!.login }
+                .filter { it.author?.login != null }
+                .groupingBy { it.author!!.login!! }
                 .fold(0) { accumulator, _ -> accumulator + 1 }
                 .forEach {
                     contributors.compute(it.key) { _, u -> it.value + (u ?: 0) }
@@ -44,12 +44,12 @@ class ContributionsResolver(
     }
 
     suspend fun resolve(repos: List<Repository>, since: LocalDate, until: LocalDate): Contributions {
-        val byRepos = ConcurrentHashMap<String, Int>()
+        val byRepos = ConcurrentHashMap<Repository, Int>()
         val byAuthors = ConcurrentHashMap<String, Int>()
         repos.forEach { repo ->
             resolveAuthors(repo, since, until)
                 .forEach {
-                    byRepos.compute(repo.name) { _, contributions -> it.value + (contributions ?: 0) }
+                    byRepos.compute(repo) { _, contributions -> it.value + (contributions ?: 0) }
                     byAuthors.compute(it.key) { _, contributions -> it.value + (contributions ?: 0) }
                 }
         }
@@ -57,22 +57,22 @@ class ContributionsResolver(
     }
 
     companion object {
-        const val PAGE_SIZE = 200
+        const val PAGE_SIZE = 500
         const val MAX_PAGES = 1000
     }
 }
 
 data class Contributions(
-    val repos: Map<String, Int>,
+    val repos: Map<Repository, Int>,
     val authors: Map<String, Int>
 )
 
 @Serializable
 data class Commit(
-    val author: User?
+    val author: User? = null
 )
 
 @Serializable
 data class User(
-    val login: String
+    val login: String? = null
 )

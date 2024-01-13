@@ -12,8 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 
-
-fun main() = runBlocking {
+suspend fun main() {
     val envProperties = EnvProperties()
     val githubToken = envProperties.get("GITHUB_TOKEN")!! as String
     val since = LocalDate.parse(envProperties.get("SINCE")!! as String)
@@ -24,16 +23,17 @@ fun main() = runBlocking {
     val contributionsResolver = ContributionsResolver(client)
 
     try {
-        val repos = repositoriesResolver.resolve(ORGANIZATION_NAMES[0])
-            .distinctBy { it.name }
-            .sortedBy { it.name }
+        val repos = ORGANIZATION_NAMES.flatMap { org ->
+            repositoriesResolver.resolve(org)
+                .distinctBy { it.name }
+        }.sortedBy { it.ownerAsString() + "/" + it.name }
         println("Repos: ${repos.size}")
         val contributions = contributionsResolver.resolve(repos, since, until)
         contributions.repos
             .filter { it.value > 0 }
             .entries
             .sortedByDescending { it.value }
-            .forEach { println("Repo ${it.key}: ${it.value}") }
+            .forEach { println("Repo ${it.key.ownerAsString()}/${it.key.name}: ${it.value}") }
         contributions.authors
             .entries
             .sortedByDescending { it.value }
