@@ -1,8 +1,6 @@
 package com.vchurkin.github.reports
 
-import com.vchurkin.github.reports.contributions.ContributionsResolver
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -26,12 +24,20 @@ fun main() = runBlocking {
     val contributionsResolver = ContributionsResolver(client)
 
     try {
-        val repositories = repositoriesResolver.resolve(ORGANIZATION_NAMES[0])
-
-        repositories.forEach {
-            contributionsResolver.resolve(it, since, until)
-                .forEach { println("${it.login}: ${it.contributions}") }
-        }
+        val repos = repositoriesResolver.resolve(ORGANIZATION_NAMES[0])
+            .distinctBy { it.name }
+            .sortedBy { it.name }
+        println("Repos: ${repos.size}")
+        val contributions = contributionsResolver.resolve(repos, since, until)
+        contributions.repos
+            .filter { it.value > 0 }
+            .entries
+            .sortedByDescending { it.value }
+            .forEach { println("Repo ${it.key}: ${it.value}") }
+        contributions.authors
+            .entries
+            .sortedByDescending { it.value }
+            .forEach { println("Author ${it.key}: ${it.value}") }
     } catch (e: Exception) {
         println("Error: ${e.message}")
     } finally {
@@ -40,13 +46,14 @@ fun main() = runBlocking {
 }
 
 private fun createHttpClient(githubToken: String) = HttpClient(CIO) {
+    expectSuccess = true
     install(ContentNegotiation) {
         json(Json {
             ignoreUnknownKeys = true
         })
     }
     install(Logging) {
-        level = LogLevel.BODY
+        level = LogLevel.INFO
         sanitizeHeader { header -> header == HttpHeaders.Authorization }
     }
     defaultRequest {

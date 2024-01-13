@@ -9,7 +9,27 @@ class RepositoriesResolver(
     private val client: HttpClient
 ) {
     suspend fun resolve(organization: String): List<Repository> {
-        return client.get("https://api.github.com/orgs/$organization/repos").body()
+        val repos = mutableListOf<Repository>()
+        var page = 0
+        while (page < MAX_PAGES) {
+            val reposPage = client.get("https://api.github.com/orgs/$organization/repos") {
+                parameter("per_page", PAGE_SIZE)
+                parameter("page", page)
+            }.body<List<Repository>>()
+
+            if (reposPage.isEmpty())
+                break
+
+            repos.addAll(reposPage)
+
+            page++
+        }
+        return repos
+    }
+
+    companion object {
+        const val PAGE_SIZE = 500
+        const val MAX_PAGES = 10
     }
 }
 
