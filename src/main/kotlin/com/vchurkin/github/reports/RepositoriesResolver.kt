@@ -10,7 +10,7 @@ class RepositoriesResolver(
 ) {
     suspend fun resolve(organization: String): List<Repository> {
         val repos = mutableListOf<Repository>()
-        var page = 0
+        var page = 1
         while (page < MAX_PAGES) {
             val reposPage = client.get("https://api.github.com/orgs/$organization/repos") {
                 parameter("per_page", PAGE_SIZE)

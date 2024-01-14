@@ -32,6 +32,12 @@ suspend fun main() {
         contributions.repos
             .filter { it.value > 0 }
             .entries
+            .groupingBy { it.key.ownerAsString() }
+            .aggregate { _, accumulator: Int?, element, _ -> element.value + (accumulator ?: 0) }
+            .forEach { println("Org ${it.key}: ${it.value}") }
+        contributions.repos
+            .filter { it.value > 0 }
+            .entries
             .sortedByDescending { it.value }
             .forEach { println("Repo ${it.key.ownerAsString()}/${it.key.name}: ${it.value}") }
         contributions.authors

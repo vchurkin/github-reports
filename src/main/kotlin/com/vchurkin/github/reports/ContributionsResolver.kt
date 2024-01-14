@@ -5,7 +5,9 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import kotlinx.serialization.Serializable
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 
 class ContributionsResolver(
@@ -13,26 +15,31 @@ class ContributionsResolver(
 ) {
     private suspend fun resolveAuthors(repo: Repository, since: LocalDate, until: LocalDate): Map<String, Int> {
         val contributors = ConcurrentHashMap<String, Int>()
-        var page = 0
+        var page = 1
         while (page < MAX_PAGES) {
-            val commits = try {
-                client.get("https://api.github.com/repos/${repo.ownerAsString()}/${repo.name}/commits") {
+            val pulls = try {
+                client.get("https://api.github.com/repos/${repo.ownerAsString()}/${repo.name}/pulls") {
                     parameter("since", "${since}T00:00:00Z")
                     parameter("until", "${until}T23:59:59Z")
+                    parameter("state", "closed")
                     parameter("per_page", PAGE_SIZE)
                     parameter("page", page)
-                }.body<List<Commit>>()
+                }.body<List<PullRequest>>()
+                    .filter { it.created_at.toLocalDate().isAfter(since) }
             } catch (e: ClientRequestException) {
                 emptyList()
             }
 
-            if (commits.isEmpty())
+            if (pulls.isEmpty())
                 break
 
-            commits
-                .filter { it.author?.login != null }
-                .groupingBy { it.author!!.login!! }
-                .fold(0) { accumulator, _ -> accumulator + 1 }
+            pulls.asSequence()
+                .filterNot { it.created_at.toLocalDate().isAfter(until) }
+                .filterNot { it.draft }
+                .filter { it.merged_at != null  }
+                .filter { it.user?.login != null }
+                .groupingBy { it.user!!.login!! }
+                .eachCount()
                 .forEach {
                     contributors.compute(it.key) { _, u -> it.value + (u ?: 0) }
                 }
@@ -56,8 +63,10 @@ class ContributionsResolver(
         return Contributions(byRepos, byAuthors)
     }
 
+    private fun Instant.toLocalDate() = this.atZone(ZoneId.systemDefault()).toLocalDate()
+
     companion object {
-        const val PAGE_SIZE = 500
+        const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
     }
 }
@@ -68,8 +77,13 @@ data class Contributions(
 )
 
 @Serializable
-data class Commit(
-    val author: User? = null
+data class PullRequest(
+    val user: User? = null,
+    @Serializable(InstantSerializer::class)
+    val created_at: Instant,
+    @Serializable(InstantSerializer::class)
+    val merged_at: Instant? = null,
+    val draft: Boolean
 )
 
 @Serializable
