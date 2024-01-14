@@ -1,4 +1,4 @@
-package com.vchurkin.github.reports
+package com.vchurkin.github.reports.utils
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind

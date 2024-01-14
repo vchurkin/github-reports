@@ -8,46 +8,38 @@ import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import java.io.File
 import java.time.LocalDate
 
 suspend fun main() {
     val envProperties = EnvProperties()
     val githubToken = envProperties.get("GITHUB_TOKEN")!! as String
+    val organizations = (envProperties.get("ORGANIZATIONS")!! as String).split(",")
     val since = LocalDate.parse(envProperties.get("SINCE")!! as String)
     val until = LocalDate.parse(envProperties.get("UNTIL")!! as String)
+
+    val outputFile = File("build/report.txt").also {
+        it.parentFile?.mkdirs()
+        it.createNewFile()
+    }
+    val outputWriter = outputFile.bufferedWriter()
 
     val client = createHttpClient(githubToken)
     val repositoriesResolver = RepositoriesResolver(client)
     val contributionsResolver = ContributionsResolver(client)
+    val reporter = Reporter(repositoriesResolver, contributionsResolver, outputWriter)
 
     try {
-        val repos = ORGANIZATION_NAMES.flatMap { org ->
-            repositoriesResolver.resolve(org)
-                .distinctBy { it.name }
-        }.sortedBy { it.ownerAsString() + "/" + it.name }
-        println("Repos: ${repos.size}")
-        val contributions = contributionsResolver.resolve(repos, since, until)
-        contributions.repos
-            .filter { it.value > 0 }
-            .entries
-            .groupingBy { it.key.ownerAsString() }
-            .aggregate { _, accumulator: Int?, element, _ -> element.value + (accumulator ?: 0) }
-            .forEach { println("Org ${it.key}: ${it.value}") }
-        contributions.repos
-            .filter { it.value > 0 }
-            .entries
-            .sortedByDescending { it.value }
-            .forEach { println("Repo ${it.key.ownerAsString()}/${it.key.name}: ${it.value}") }
-        contributions.authors
-            .entries
-            .sortedByDescending { it.value }
-            .forEach { println("Author ${it.key}: ${it.value}") }
+        reporter.calculateContributions(ReportQuery(organizations, since, until))
+
+        println(outputFile.readText())
     } catch (e: Exception) {
         println("Error: ${e.message}")
+        e.printStackTrace()
     } finally {
         client.close()
+        outputWriter.close()
     }
 }
 

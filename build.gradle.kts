@@ -29,4 +29,5 @@ dependencies {
     implementation("io.ktor:ktor-client-logging")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.3.2")
     implementation("ch.qos.logback:logback-classic:$logback_version")
+    implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
 }

@@ -1,5 +1,7 @@
 package com.vchurkin.github.reports
 
+import com.vchurkin.github.reports.utils.InstantSerializer
+import com.vchurkin.github.reports.utils.toLocalDate
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -8,10 +10,10 @@ import io.ktor.http.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import kotlin.math.min
@@ -31,7 +33,7 @@ class ContributionsResolver(
                     parameter("per_page", PAGE_SIZE)
                     parameter("page", page)
                 }.body<List<PullRequest>>()
-                    .filter { it.created_at.toLocalDate().isAfter(since) }
+                    .filter { it.createdAt.toLocalDate().isAfter(since) }
             } catch (e: ClientRequestException) {
                 if (e.response.status == HttpStatusCode.Conflict)
                     emptyList()
@@ -43,9 +45,9 @@ class ContributionsResolver(
                 break
 
             pulls.asSequence()
-                .filterNot { it.created_at.toLocalDate().isAfter(until) }
+                .filterNot { it.createdAt.toLocalDate().isAfter(until) }
                 .filterNot { it.draft }
-                .filter { it.merged_at != null  }
+                .filter { it.mergedAt != null  }
                 .filter { it.user?.login != null }
                 .groupingBy { it.user!!.login!! }
                 .eachCount()
@@ -86,8 +88,6 @@ class ContributionsResolver(
         return Contributions(byRepos, byAuthors)
     }
 
-    private fun Instant.toLocalDate() = this.atZone(ZoneId.systemDefault()).toLocalDate()
-
     companion object {
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
@@ -104,9 +104,11 @@ data class Contributions(
 data class PullRequest(
     val user: User? = null,
     @Serializable(InstantSerializer::class)
-    val created_at: Instant,
+    @SerialName("created_at")
+    val createdAt: Instant,
     @Serializable(InstantSerializer::class)
-    val merged_at: Instant? = null,
+    @SerialName("merged_at")
+    val mergedAt: Instant? = null,
     val draft: Boolean
 )
 
