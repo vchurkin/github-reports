@@ -4,15 +4,14 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
+import io.ktor.http.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingQueue
 import kotlin.math.min
@@ -34,7 +33,10 @@ class ContributionsResolver(
                 }.body<List<PullRequest>>()
                     .filter { it.created_at.toLocalDate().isAfter(since) }
             } catch (e: ClientRequestException) {
-                emptyList()
+                if (e.response.status == HttpStatusCode.Conflict)
+                    emptyList()
+                else
+                    throw e
             }
 
             if (pulls.isEmpty())
