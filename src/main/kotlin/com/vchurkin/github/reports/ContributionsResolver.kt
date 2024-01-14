@@ -4,11 +4,18 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingQueue
+import kotlin.math.min
 
 class ContributionsResolver(
     private val client: HttpClient
@@ -51,14 +58,28 @@ class ContributionsResolver(
     }
 
     suspend fun resolve(repos: List<Repository>, since: LocalDate, until: LocalDate): Contributions {
+        if (repos.isEmpty())
+            return Contributions()
+
+        val reposQueue = LinkedBlockingQueue(repos)
         val byRepos = ConcurrentHashMap<Repository, Int>()
         val byAuthors = ConcurrentHashMap<String, Int>()
-        repos.forEach { repo ->
-            resolveAuthors(repo, since, until)
-                .forEach {
-                    byRepos.compute(repo) { _, contributions -> it.value + (contributions ?: 0) }
-                    byAuthors.compute(it.key) { _, contributions -> it.value + (contributions ?: 0) }
+
+        val parallelism = min(repos.size, MAX_PARALLELISM)
+        coroutineScope {
+            (1..parallelism).map { _ ->
+                async {
+                    var repo: Repository? = reposQueue.poll()
+                    while (repo != null) {
+                        resolveAuthors(repo, since, until)
+                            .forEach {
+                                byRepos.compute(repo!!) { _, contributions -> it.value + (contributions ?: 0) }
+                                byAuthors.compute(it.key) { _, contributions -> it.value + (contributions ?: 0) }
+                            }
+                        repo = reposQueue.poll()
+                    }
                 }
+            }.awaitAll()
         }
         return Contributions(byRepos, byAuthors)
     }
@@ -68,12 +89,13 @@ class ContributionsResolver(
     companion object {
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
+        const val MAX_PARALLELISM = 5
     }
 }
 
 data class Contributions(
-    val repos: Map<Repository, Int>,
-    val authors: Map<String, Int>
+    val repos: Map<Repository, Int> = emptyMap(),
+    val authors: Map<String, Int> = emptyMap()
 )
 
 @Serializable
