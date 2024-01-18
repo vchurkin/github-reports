@@ -1,4 +1,4 @@
-package com.vchurkin.github.reports
+package com.vchurkin.github.reports.repositories
 
 import com.vchurkin.github.reports.utils.InstantSerializer
 import com.vchurkin.github.reports.utils.toLocalDate
@@ -13,6 +13,26 @@ import java.time.LocalDate
 class RepositoriesResolver(
     private val client: HttpClient
 ) {
+    suspend fun resolve(organization: String): List<Repository> {
+        val repos = mutableListOf<Repository>()
+        var page = 1
+        while (page < MAX_PAGES) {
+            val reposPage = client.get("https://api.github.com/orgs/$organization/repos") {
+                parameter("per_page", PAGE_SIZE)
+                parameter("page", page)
+            }.body<List<Repository>>()
+                .filterNot { it.archived }
+
+            if (reposPage.isEmpty())
+                break
+
+            repos.addAll(reposPage)
+
+            page++
+        }
+        return repos
+    }
+
     suspend fun resolve(organization: String, since: LocalDate, until: LocalDate): List<Repository> {
         val repos = mutableListOf<Repository>()
         var page = 1
@@ -50,7 +70,8 @@ data class Repository(
     val createdAt: Instant,
     @Serializable(InstantSerializer::class)
     @SerialName("pushed_at")
-    val pushedAt: Instant? = null
+    val pushedAt: Instant? = null,
+    val archived: Boolean
 ) {
     fun ownerAsString() = owner.login
 }

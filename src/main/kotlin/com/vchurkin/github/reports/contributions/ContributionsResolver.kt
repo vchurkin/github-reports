@@ -1,5 +1,6 @@
-package com.vchurkin.github.reports
+package com.vchurkin.github.reports.contributions
 
+import com.vchurkin.github.reports.repositories.Repository
 import com.vchurkin.github.reports.utils.InstantSerializer
 import com.vchurkin.github.reports.utils.toLocalDate
 import io.ktor.client.*

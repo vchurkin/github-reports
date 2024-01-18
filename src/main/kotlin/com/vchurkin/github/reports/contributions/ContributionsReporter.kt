@@ -1,16 +1,17 @@
-package com.vchurkin.github.reports
+package com.vchurkin.github.reports.contributions
 
+import com.vchurkin.github.reports.repositories.RepositoriesResolver
 import com.vchurkin.github.reports.utils.toLocalDate
 import java.io.BufferedWriter
 import java.time.LocalDate
 
-class Reporter(
+class ContributionsReporter(
     private val repositoriesResolver: RepositoriesResolver,
     private val contributionsResolver: ContributionsResolver,
     private val outputWriter: BufferedWriter
 ) {
-    suspend fun calculateContributions(query: ReportQuery) {
-        writeLine("===== REPORT =====")
+    suspend fun calculateContributions(query: ContributionsReportQuery) {
+        writeLine("===== CONTRIBUTIONS =====")
         writeLine("$query")
         outputWriter.flush()
 
@@ -56,7 +57,7 @@ class Reporter(
     }
 }
 
-data class ReportQuery(
+data class ContributionsReportQuery(
     val organizations: List<String>,
     val since: LocalDate,
     val until: LocalDate
