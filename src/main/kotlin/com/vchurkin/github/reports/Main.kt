@@ -8,6 +8,7 @@ import com.vchurkin.github.reports.contributions.ContributionsReporter
 import com.vchurkin.github.reports.repositories.RepositoriesResolver
 import com.vchurkin.github.reports.codeowners.CodeownersResolver
 import com.vchurkin.github.reports.repositories.RepositoryFileContentResolver
+import com.vchurkin.github.reports.utils.OUTPUT_DIR_DEFAULT
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
@@ -17,59 +18,48 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
-import java.io.BufferedWriter
-import java.io.File
-import java.time.Instant
 import java.time.LocalDate
 
 suspend fun main() {
     val envProperties = EnvProperties()
+
     val githubToken = envProperties.get("GITHUB_TOKEN")!! as String
-
-    val outputFile = File("build/report-${Instant.now()}.txt").also {
-        it.parentFile?.mkdirs()
-        it.createNewFile()
-    }
-    val outputWriter = outputFile.bufferedWriter()
-
     val client = createHttpClient(githubToken)
 
-    try {
-        codeowners(envProperties, client, outputWriter)
+    val outputDir = (envProperties.get("OUTPUT_DIR") as String?)
+        ?.takeIf { it.isNotEmpty() }
+        ?: OUTPUT_DIR_DEFAULT
 
-        println(outputFile.readText())
+    try {
+        codeowners(envProperties, client, outputDir)
+        contributions(envProperties, client, outputDir)
     } catch (e: Exception) {
         println("Error: ${e.message}")
         e.printStackTrace()
     } finally {
         client.close()
-        outputWriter.close()
     }
 }
 
-private suspend fun contributions(envProperties: EnvProperties,
-                                  client: HttpClient,
-                                  outputWriter: BufferedWriter) {
+private suspend fun contributions(envProperties: EnvProperties, client: HttpClient, outputDir: String) {
     val repositoriesResolver = RepositoriesResolver(client)
     val contributionsResolver = ContributionsResolver(client)
-    val contributionsReporter = ContributionsReporter(repositoriesResolver, contributionsResolver, outputWriter)
+    val contributionsReporter = ContributionsReporter(repositoriesResolver, contributionsResolver, outputDir)
 
     val organizations = (envProperties.get("ORGANIZATIONS")!! as String).split(",")
     val since = LocalDate.parse(envProperties.get("SINCE")!! as String)
     val until = LocalDate.parse(envProperties.get("UNTIL")!! as String)
-    contributionsReporter.calculateContributions(ContributionsReportQuery(organizations, since, until))
+    contributionsReporter.build(ContributionsReportQuery(organizations, since, until))
 }
 
-private suspend fun codeowners(envProperties: EnvProperties,
-                               client: HttpClient,
-                               outputWriter: BufferedWriter) {
+private suspend fun codeowners(envProperties: EnvProperties, client: HttpClient, outputDir: String) {
     val repositoriesResolver = RepositoriesResolver(client)
     val fileContentResolver = RepositoryFileContentResolver(client)
     val codeownersResolver = CodeownersResolver(fileContentResolver)
-    val codeownersReporter = CodeownersReporter(repositoriesResolver, codeownersResolver, outputWriter)
+    val codeownersReporter = CodeownersReporter(repositoriesResolver, codeownersResolver, outputDir)
 
     val organizations = (envProperties.get("ORGANIZATIONS")!! as String).split(",")
-    codeownersReporter.calculateCodeowners(CodeownersReportQuery(organizations))
+    codeownersReporter.build(CodeownersReportQuery(organizations))
 }
 
 private fun createHttpClient(githubToken: String) = HttpClient(CIO) {

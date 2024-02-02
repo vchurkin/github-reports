@@ -1,59 +1,77 @@
 package com.vchurkin.github.reports.contributions
 
 import com.vchurkin.github.reports.repositories.RepositoriesResolver
-import com.vchurkin.github.reports.utils.toLocalDate
+import com.vchurkin.github.reports.utils.writeCsvLine
 import java.io.BufferedWriter
+import java.io.File
 import java.time.LocalDate
 
+/**
+ * Build CSV report with following structure:
+ * "Organization","Repository","Author","Contributions"
+ */
 class ContributionsReporter(
     private val repositoriesResolver: RepositoriesResolver,
     private val contributionsResolver: ContributionsResolver,
-    private val outputWriter: BufferedWriter
+    private val outputDir: String
 ) {
-    suspend fun calculateContributions(query: ContributionsReportQuery) {
-        writeLine("===== CONTRIBUTIONS =====")
-        writeLine("$query")
-        outputWriter.flush()
+    suspend fun build(query: ContributionsReportQuery) {
+        File("$outputDir/contributions.csv").also {
+            it.parentFile?.mkdirs()
+            it.createNewFile()
+        }.bufferedWriter().use { writer ->
+            writer.writeCsvHeader()
 
-        writeLine("===== ORGANIZATIONS =====")
-        val repos = query.organizations.flatMap { org ->
-            repositoriesResolver.resolve(org, query.since, query.until).also {
-                writeLine("Organization: name=$org, repos=${it.size}")
-            }
-        }.sortedBy { it.ownerAsString() + "/" + it.name }
-        outputWriter.flush()
+            val repos = query.organizations.flatMap { org ->
+                repositoriesResolver.resolve(org, query.since, query.until)
+            }.sortedBy { it.ownerAsString() + "/" + it.name }
 
-        val contributions = contributionsResolver.resolve(repos, query.since, query.until)
-        contributions.repos
-            .filter { it.value > 0 }
-            .entries
-            .groupingBy { it.key.ownerAsString() }
-            .aggregate { _, accumulator: Int?, element, _ -> element.value + (accumulator ?: 0) }
-            .forEach { writeLine("Organization: name=${it.key}, contributions=${it.value}") }
-        outputWriter.flush()
+            val contributions = contributionsResolver.resolve(repos, query.since, query.until)
+            contributions.repos
+                .filter { it.value > 0 }
+                .entries
+                .groupingBy { it.key.ownerAsString() }
+                .aggregate { _, accumulator: Int?, element, _ -> element.value + (accumulator ?: 0) }
+                .forEach {
+                    writer.writeCsvValues(
+                        org = it.key,
+                        contributions = it.value
+                    )
+                }
 
-        writeLine("===== REPOSITORIES =====")
-        contributions.repos
-            .filter { it.value > 0 }
-            .entries
-            .sortedByDescending { it.value }
-            .forEach {
-                writeLine("Repo: name=${it.key.ownerAsString()}/${it.key.name}, " +
-                        "created=${it.key.createdAt.toLocalDate()}, contributions=${it.value}")
-            }
-        outputWriter.flush()
+            contributions.repos
+                .filter { it.value > 0 }
+                .entries
+                .sortedByDescending { it.value }
+                .forEach {
+                    writer.writeCsvValues(
+                        org = it.key.ownerAsString(),
+                        repo = it.key.name,
+                        contributions = it.value
+                    )
+                }
 
-        writeLine("===== CONTRIBUTORS =====")
-        contributions.authors
-            .entries
-            .sortedByDescending { it.value }
-            .forEach { writeLine("Contributor: name=${it.key}, contributions=${it.value}") }
-        outputWriter.flush()
+            contributions.authors
+                .entries
+                .sortedByDescending { it.value }
+                .forEach {
+                    writer.writeCsvValues(
+                        author = it.key,
+                        contributions = it.value
+                    )
+                }
+        }
     }
 
-    private fun writeLine(line: String) {
-        outputWriter.write(line)
-        outputWriter.write("\n")
+    private fun BufferedWriter.writeCsvHeader() {
+        this.writeCsvLine("Organization", "Repository", "Author", "Contributions")
+    }
+
+    private fun BufferedWriter.writeCsvValues(org: String? = null,
+                                              repo: String? = null,
+                                              author: String? = null,
+                                              contributions: Int) {
+        this.writeCsvLine(org, repo, author, contributions)
     }
 }
 
