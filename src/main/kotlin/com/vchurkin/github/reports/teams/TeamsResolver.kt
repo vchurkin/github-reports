@@ -35,7 +35,6 @@ class TeamsResolver(
 
 @Serializable
 data class Team(
-    val name: String,
-    val slug: String,
-    val organization: String,
+    val name: String? = null,
+    val slug: String
 )

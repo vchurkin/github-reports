@@ -15,13 +15,25 @@ class CopilotResolver(
     private val client: HttpClient,
     private val teamsResolver: TeamsResolver
 ) {
-    suspend fun resolveDaysByOrganization(organization: String, since: LocalDate, until: LocalDate): List<CopilotDayStats> {
+    private suspend fun resolveDays(organization: String,
+                                    team: String? = null,
+                                    since: LocalDate,
+                                    until: LocalDate): List<CopilotDayStats> {
         val copilotDays = mutableListOf<CopilotDayStats>()
         var page = 1
         while (page < MAX_PAGES) {
             val copilotDaysPage = try {
-                client.get("https://api.github.com/orgs/$organization/copilot/metrics") {
-                    parameter("since", since.let { if (it.isBefore(EARLIEST_DATE_BY_ORG)) EARLIEST_DATE_BY_ORG else it })
+                val orgAndTeam = if (team != null) "$organization/team/$team" else organization
+                val cappedSince = if (team != null) {
+                    if (since.isBefore(EARLIEST_TEAM_STATS)) EARLIEST_TEAM_STATS else since
+                } else {
+                    if (since.isBefore(EARLIEST_ORG_STATS)) EARLIEST_ORG_STATS else since
+                }
+                if (!until.isAfter(cappedSince)) {
+                    return emptyList()
+                }
+                client.get("https://api.github.com/orgs/$orgAndTeam/copilot/metrics") {
+                    parameter("since", cappedSince)
                     parameter("until", until)
                     parameter("per_page", PAGE_SIZE)
                     parameter("page", page)
@@ -44,13 +56,11 @@ class CopilotResolver(
         return copilotDays
     }
 
-    suspend fun resolve(organization: String, since: LocalDate, until: LocalDate): CopilotStats {
-        val copilotDays = resolveDaysByOrganization(organization, since, until)
-
+    private fun List<CopilotDayStats>.summarize(organization: String, team: String? = null): CopilotStats {
         var totalActiveUsers = 0
         var totalEngagedUsers = 0
         var daysActive = 0
-        copilotDays
+        this
             .filter { it.totalActiveUsers > 0 }
             .forEach {
                 daysActive++
@@ -59,25 +69,45 @@ class CopilotResolver(
             }
 
         if (daysActive == 0) {
-            return CopilotStats(organization)
+            return CopilotStats(organization, team)
         }
 
         return CopilotStats(
-            organization, daysActive,
+            organization,
+            team,
+            daysActive = daysActive,
             dailyActiveUsers = totalActiveUsers.toDouble() / daysActive,
             dailyEngagedUsers = totalEngagedUsers.toDouble() / daysActive
         )
     }
 
+    suspend fun resolve(organization: String, since: LocalDate, until: LocalDate): List<CopilotStats> {
+        val copilotStats = mutableListOf<CopilotStats>()
+
+        val copilotOrgDays = resolveDays(organization, since = since, until = until)
+        copilotStats.add(copilotOrgDays.summarize(organization))
+
+        if (!copilotOrgDays.isEmpty()) {
+            teamsResolver.resolve(organization).map { team ->
+                val copilotTeamDays = resolveDays(organization, team.slug, since, until)
+                copilotStats.add(copilotTeamDays.summarize(organization, team.slug))
+            }
+        }
+
+        return copilotStats
+    }
+
     companion object {
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
-        private val EARLIEST_DATE_BY_ORG = LocalDate.parse("2025-08-16")
+        private val EARLIEST_ORG_STATS = LocalDate.parse("2025-08-16")
+        private val EARLIEST_TEAM_STATS = LocalDate.parse("2025-10-27")
     }
 }
 
 data class CopilotStats(
     val organization: String,
+    val team: String?,
     val daysActive: Int = 0,
     val dailyActiveUsers: Double = 0.0,
     val dailyEngagedUsers: Double = 0.0,

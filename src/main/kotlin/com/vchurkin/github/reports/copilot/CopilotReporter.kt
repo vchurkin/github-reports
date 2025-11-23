@@ -19,28 +19,30 @@ class CopilotReporter(
         }.bufferedWriter().use { writer ->
             writer.writeCsvHeader()
 
-            val copilot = query.organizations.map { copilotResolver.resolve(it, query.since, query.until) }
+            val copilot = query.organizations.flatMap { copilotResolver.resolve(it, query.since, query.until) }
 
-            copilot.forEach { copilotByOrg ->
+            copilot.forEach {
                 writer.writeCsvValues(
-                    org = copilotByOrg.organization,
-                    daysActive = copilotByOrg.daysActive,
-                    dailyActiveUsers = copilotByOrg.dailyActiveUsers,
-                    dailyEngagedUsers = copilotByOrg.dailyEngagedUsers
+                    it.organization,
+                    it.team,
+                    it.daysActive,
+                    it.dailyActiveUsers,
+                    it.dailyEngagedUsers
                 )
             }
         }
     }
 
     private fun BufferedWriter.writeCsvHeader() {
-        this.writeCsvLine("Organization", "Days Active", "Daily Active Users", "Daily Engaged Users")
+        this.writeCsvLine("Organization", "Team", "Days Active", "Daily Active Users", "Daily Engaged Users")
     }
 
     private fun BufferedWriter.writeCsvValues(org: String? = null,
+                                              team: String? = null,
                                               daysActive: Int? = null,
                                               dailyActiveUsers: Double? = null,
                                               dailyEngagedUsers: Double? = null) {
-        this.writeCsvLine(org, daysActive, dailyActiveUsers, dailyEngagedUsers)
+        this.writeCsvLine(org, team, daysActive, dailyActiveUsers, dailyEngagedUsers)
     }
 }
 
