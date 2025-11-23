@@ -7,7 +7,11 @@ import com.vchurkin.github.reports.contributions.ContributionsReportQuery
 import com.vchurkin.github.reports.contributions.ContributionsReporter
 import com.vchurkin.github.reports.repositories.RepositoriesResolver
 import com.vchurkin.github.reports.codeowners.CodeownersResolver
+import com.vchurkin.github.reports.copilot.CopilotReportQuery
+import com.vchurkin.github.reports.copilot.CopilotReporter
+import com.vchurkin.github.reports.copilot.CopilotResolver
 import com.vchurkin.github.reports.repositories.RepositoryFileContentResolver
+import com.vchurkin.github.reports.teams.TeamsResolver
 import com.vchurkin.github.reports.utils.OUTPUT_DIR_DEFAULT
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -33,6 +37,7 @@ suspend fun main() {
     try {
         codeowners(envProperties, client, outputDir)
         contributions(envProperties, client, outputDir)
+        copilot(envProperties, client, outputDir)
     } catch (e: Exception) {
         println("Error: ${e.message}")
         e.printStackTrace()
@@ -46,10 +51,9 @@ private suspend fun contributions(envProperties: EnvProperties, client: HttpClie
     val contributionsResolver = ContributionsResolver(client)
     val contributionsReporter = ContributionsReporter(repositoriesResolver, contributionsResolver, outputDir)
 
-    val organizations = (envProperties.get("ORGANIZATIONS")!! as String).split(",")
     val since = LocalDate.parse(envProperties.get("SINCE")!! as String)
     val until = LocalDate.parse(envProperties.get("UNTIL")!! as String)
-    contributionsReporter.build(ContributionsReportQuery(organizations, since, until))
+    contributionsReporter.build(ContributionsReportQuery(envProperties.organizations(), since, until))
 }
 
 private suspend fun codeowners(envProperties: EnvProperties, client: HttpClient, outputDir: String) {
@@ -58,9 +62,21 @@ private suspend fun codeowners(envProperties: EnvProperties, client: HttpClient,
     val codeownersResolver = CodeownersResolver(fileContentResolver)
     val codeownersReporter = CodeownersReporter(repositoriesResolver, codeownersResolver, outputDir)
 
-    val organizations = (envProperties.get("ORGANIZATIONS")!! as String).split(",")
-    codeownersReporter.build(CodeownersReportQuery(organizations))
+    codeownersReporter.build(CodeownersReportQuery(envProperties.organizations()))
 }
+
+private suspend fun copilot(envProperties: EnvProperties, client: HttpClient, outputDir: String) {
+    val teamsResolver = TeamsResolver(client)
+    val copilotResolver = CopilotResolver(client, teamsResolver)
+    val copilotReporter = CopilotReporter(copilotResolver, outputDir)
+
+    val since = LocalDate.parse(envProperties.get("SINCE")!! as String)
+    val until = LocalDate.parse(envProperties.get("UNTIL")!! as String)
+    copilotReporter.build(CopilotReportQuery(envProperties.organizations(), since, until))
+}
+
+private fun EnvProperties.organizations(): List<String> =
+    (this.get("ORGANIZATIONS")!! as String).split(",")
 
 private fun createHttpClient(githubToken: String) = HttpClient(CIO) {
     expectSuccess = true
