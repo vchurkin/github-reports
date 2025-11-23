@@ -4,6 +4,8 @@ import com.vchurkin.github.reports.repositories.RepositoriesResolver
 import com.vchurkin.github.reports.utils.writeCsvLine
 import java.io.BufferedWriter
 import java.io.File
+import java.math.RoundingMode
+import java.time.Duration
 import java.time.LocalDate
 
 /**
@@ -28,52 +30,58 @@ class ContributionsReporter(
 
             val contributions = contributionsResolver.resolve(repos, query.since, query.until)
             contributions.repos
-                .filter { it.value > 0 }
+                .filter { it.value.count() > 0 }
                 .entries
                 .groupingBy { it.key.ownerAsString() }
-                .aggregate { _, accumulator: Int?, element, _ -> element.value + (accumulator ?: 0) }
+                .aggregate { _, acc: ContributionStats?, element, _ -> (acc ?: ContributionStats()).add(element.value) }
                 .forEach {
                     writer.writeCsvValues(
                         org = it.key,
-                        contributions = it.value
+                        stats = it.value
                     )
                 }
 
             contributions.repos
-                .filter { it.value > 0 }
+                .filter { it.value.count() > 0 }
                 .entries
-                .sortedByDescending { it.value }
+                .sortedByDescending { it.value.count() }
                 .forEach {
                     writer.writeCsvValues(
                         org = it.key.ownerAsString(),
                         repo = it.key.name,
-                        contributions = it.value
+                        stats = it.value
                     )
                 }
 
             contributions.authors
                 .entries
-                .sortedByDescending { it.value }
+                .sortedByDescending { it.value.count() }
                 .forEach {
                     writer.writeCsvValues(
                         author = it.key,
-                        contributions = it.value
+                        stats = it.value
                     )
                 }
         }
     }
 
     private fun BufferedWriter.writeCsvHeader() {
-        this.writeCsvLine("Organization", "Repository", "Author", "Contributions")
+        this.writeCsvLine("Organization", "Repository", "Author", "Contributions", "Median Lifetime (h)", "Max Lifetime (h)")
     }
 
     private fun BufferedWriter.writeCsvValues(org: String? = null,
                                               repo: String? = null,
                                               author: String? = null,
-                                              contributions: Int) {
-        this.writeCsvLine(org, repo, author, contributions)
+                                              stats: ContributionStats) {
+        this.writeCsvLine(org, repo, author, stats.count(),
+            stats.medianLifetime()!!.toHoursAsDouble().setScale(1),
+            stats.maxLifetime()!!.toHoursAsDouble().setScale(1))
     }
 }
+
+private fun Duration.toHoursAsDouble(): Double = this.toSeconds().toDouble() / 60 / 60
+
+private fun Double.setScale(n: Int) = this.toBigDecimal().setScale(n, RoundingMode.HALF_UP).toDouble()
 
 data class ContributionsReportQuery(
     val organizations: List<String>,

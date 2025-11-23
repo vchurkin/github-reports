@@ -13,6 +13,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
@@ -22,8 +23,8 @@ import kotlin.math.min
 class ContributionsResolver(
     private val client: HttpClient
 ) {
-    private suspend fun resolveAuthors(repo: Repository, since: LocalDate, until: LocalDate): Map<String, Int> {
-        val contributors = ConcurrentHashMap<String, Int>()
+    private suspend fun resolveAuthors(repo: Repository, since: LocalDate, until: LocalDate): Map<String, ContributionStats> {
+        val contributors = ConcurrentHashMap<String, ContributionStats>()
         var page = 1
         while (page < MAX_PAGES) {
             val pulls = try {
@@ -48,12 +49,13 @@ class ContributionsResolver(
             pulls.asSequence()
                 .filterNot { it.createdAt.toLocalDate().isAfter(until) }
                 .filterNot { it.draft }
-                .filter { it.mergedAt != null  }
+                .filter { it.mergedAt != null }
                 .filter { it.user?.login != null }
                 .groupingBy { it.user!!.login!! }
-                .eachCount()
+                .aggregate { _, acc: ContributionStats?, element, _ ->
+                    (acc ?: ContributionStats()).add(PullRequestInfo(element.duration()!!)) }
                 .forEach {
-                    contributors.compute(it.key) { _, u -> it.value + (u ?: 0) }
+                    contributors.compute(it.key) { _, u -> (u ?: ContributionStats()).add(it.value) }
                 }
 
             page++
@@ -67,8 +69,8 @@ class ContributionsResolver(
             return Contributions()
 
         val reposQueue = LinkedBlockingQueue(repos)
-        val byRepos = ConcurrentHashMap<Repository, Int>()
-        val byAuthors = ConcurrentHashMap<String, Int>()
+        val byRepos = ConcurrentHashMap<Repository, ContributionStats>()
+        val byAuthors = ConcurrentHashMap<String, ContributionStats>()
 
         val parallelism = min(repos.size, MAX_PARALLELISM)
         coroutineScope {
@@ -78,8 +80,8 @@ class ContributionsResolver(
                     while (repo != null) {
                         resolveAuthors(repo, since, until)
                             .forEach {
-                                byRepos.compute(repo!!) { _, contributions -> it.value + (contributions ?: 0) }
-                                byAuthors.compute(it.key) { _, contributions -> it.value + (contributions ?: 0) }
+                                byRepos.compute(repo!!) { _, u -> (u ?: ContributionStats()).add(it.value) }
+                                byAuthors.compute(it.key) { _, u -> (u ?: ContributionStats()).add(it.value) }
                             }
                         repo = reposQueue.poll()
                     }
@@ -97,12 +99,45 @@ class ContributionsResolver(
 }
 
 data class Contributions(
-    val repos: Map<Repository, Int> = emptyMap(),
-    val authors: Map<String, Int> = emptyMap()
+    val repos: Map<Repository, ContributionStats> = emptyMap(),
+    val authors: Map<String, ContributionStats> = emptyMap()
 )
+
+data class PullRequestInfo(
+    val lifetime: Duration,
+)
+
+data class ContributionStats(
+    val prs: MutableList<PullRequestInfo> = mutableListOf()
+) {
+    fun count() = prs.size
+
+    fun maxLifetime(): Duration? = prs.maxByOrNull { it.lifetime }?.lifetime
+
+    fun medianLifetime(): Duration? = prs.sortedBy { it.lifetime }.let {
+        if (it.isEmpty()) {
+            null
+        } else if (it.size % 2 == 0) {
+            Duration.ofMillis((it[it.size / 2].lifetime.toMillis() + it[(it.size - 1) / 2].lifetime.toMillis()) / 2)
+        } else {
+            it[it.size / 2].lifetime
+        }
+    }
+
+    fun add(pr: PullRequestInfo): ContributionStats {
+        prs.addLast(pr)
+        return this
+    }
+
+    fun add(stats: ContributionStats): ContributionStats {
+        prs.addAll(stats.prs)
+        return this
+    }
+}
 
 @Serializable
 data class PullRequest(
+    val number: Long? = null,
     val user: User? = null,
     @Serializable(InstantSerializer::class)
     @SerialName("created_at")
@@ -112,6 +147,13 @@ data class PullRequest(
     val mergedAt: Instant? = null,
     val draft: Boolean
 )
+
+fun PullRequest.duration(): Duration? {
+    if (this.mergedAt == null) {
+        return null;
+    }
+    return Duration.between(this.createdAt, this.mergedAt)
+}
 
 @Serializable
 data class User(
