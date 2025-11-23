@@ -61,23 +61,35 @@ class CopilotResolver(
         var totalEngagedUsers = 0
         var daysActive = 0
         this
-            .filter { it.totalActiveUsers > 0 }
+            .filter { it.activeUsers > 0 }
             .forEach {
                 daysActive++
-                totalActiveUsers += it.totalActiveUsers
-                totalEngagedUsers += it.totalEngagedUsers
+                totalActiveUsers += it.activeUsers
+                totalEngagedUsers += it.engagedUsers
             }
 
         if (daysActive == 0) {
             return CopilotStats(organization, team)
         }
 
+        val codeCompletionStats: CopilotCodeCompletionStats = this
+            .flatMap { it.ideCodeCompletions?.editors ?: emptyList() }
+            .flatMap { it.models ?: emptyList() }
+            .flatMap { it.languages ?: emptyList() }
+            .fold(CopilotCodeCompletionStats()) { acc, next ->
+                CopilotCodeCompletionStats(
+                    acc.codeBlocksAccepted + next.codeBlocksAccepted,
+                    acc.codeLinesAccepted + next.codeLinesAccepted
+                )
+            }
+
         return CopilotStats(
             organization,
             team,
             daysActive = daysActive,
             dailyActiveUsers = totalActiveUsers.toDouble() / daysActive,
-            dailyEngagedUsers = totalEngagedUsers.toDouble() / daysActive
+            dailyEngagedUsers = totalEngagedUsers.toDouble() / daysActive,
+            codeCompletionStats
         )
     }
 
@@ -111,6 +123,12 @@ data class CopilotStats(
     val daysActive: Int = 0,
     val dailyActiveUsers: Double = 0.0,
     val dailyEngagedUsers: Double = 0.0,
+    val codeCompletion: CopilotCodeCompletionStats? = null,
+)
+
+data class CopilotCodeCompletionStats(
+    val codeBlocksAccepted: Int = 0,
+    val codeLinesAccepted: Int = 0,
 )
 
 @Serializable
@@ -118,7 +136,37 @@ data class CopilotDayStats(
     @Serializable(LocalDateSerializer::class)
     val date: LocalDate? = null,
     @SerialName("total_active_users")
-    val totalActiveUsers: Int,
+    val activeUsers: Int,
     @SerialName("total_engaged_users")
-    val totalEngagedUsers: Int,
+    val engagedUsers: Int,
+    @SerialName("copilot_ide_code_completions")
+    val ideCodeCompletions: CopilotCodeCompletions? = null
+)
+
+@Serializable
+data class CopilotCodeCompletions(
+    val editors: List<CopilotEditor>? = null
+)
+
+@Serializable
+data class CopilotEditor(
+    val name: String,
+    val models: List<CopilotModel>? = null,
+)
+
+@Serializable
+data class CopilotModel(
+    val name: String,
+    val languages: List<CopilotLanguage>? = null,
+)
+
+@Serializable
+data class CopilotLanguage(
+    val name: String,
+    @SerialName("total_engaged_users")
+    val engagedUsers: Int,
+    @SerialName("total_code_acceptances")
+    val codeBlocksAccepted: Int,
+    @SerialName("total_code_lines_accepted")
+    val codeLinesAccepted: Int,
 )
