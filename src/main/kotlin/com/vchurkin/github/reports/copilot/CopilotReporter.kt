@@ -29,8 +29,9 @@ class CopilotReporter(
                     it.daysActive,
                     it.dailyActiveUsers,
                     it.dailyEngagedUsers,
-                    it.codeCompletion?.codeBlocksAccepted ?: 0,
-                    it.codeCompletion?.codeLinesAccepted ?: 0,
+                    it.codeCompletion.codeBlocksAccepted,
+                    it.codeCompletion.codeLinesAccepted,
+                    it.codeReview.prsReviewed
                 )
             }
         }
@@ -39,7 +40,7 @@ class CopilotReporter(
     private fun BufferedWriter.writeCsvHeader() {
         this.writeCsvLine("Organization", "Team",
             "Days Active", "Daily Active Users", "Daily Engaged Users",
-            "Code Blocks Accepted", "Code Lines Accepted")
+            "Code Blocks Accepted", "Code Lines Accepted", "Code Reviews")
     }
 
     private fun BufferedWriter.writeCsvValues(org: String? = null,
@@ -48,11 +49,12 @@ class CopilotReporter(
                                               dailyActiveUsers: Double? = null,
                                               dailyEngagedUsers: Double? = null,
                                               codeBlocksAccepted: Int? = null,
-                                              codeLinesAccepted: Int? = null) {
+                                              codeLinesAccepted: Int? = null,
+                                              codeReviews: Int? = null) {
         this.writeCsvLine(org, team, daysActive,
             dailyActiveUsers?.toBigDecimal()?.setScale(1, RoundingMode.HALF_UP),
             dailyEngagedUsers?.toBigDecimal()?.setScale(1, RoundingMode.HALF_UP),
-            codeBlocksAccepted, codeLinesAccepted)
+            codeBlocksAccepted, codeLinesAccepted, codeReviews)
     }
 }
 

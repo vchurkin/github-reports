@@ -43,9 +43,6 @@ class RepositoriesResolver(
             }.body<List<Repository>>()
                 .filterNot { it.createdAt.toLocalDate().isAfter(until) }
 
-            if (reposPage.isEmpty())
-                break
-
             reposPage
                 .filterNot { it.pushedAt == null || it.pushedAt.toLocalDate().isBefore(since) }
                 .also { repos.addAll(it) }

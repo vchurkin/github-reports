@@ -1,5 +1,6 @@
 package com.vchurkin.github.reports.copilot
 
+import com.vchurkin.github.reports.contributions.PullRequest
 import com.vchurkin.github.reports.teams.TeamsResolver
 import com.vchurkin.github.reports.utils.LocalDateSerializer
 import io.ktor.client.*
@@ -7,6 +8,10 @@ import io.ktor.client.call.*
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.*
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.ParametersBuilder
+import io.ktor.http.URLBuilder
+import io.ktor.http.encodeURLParameter
+import io.ktor.http.path
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
@@ -93,18 +98,56 @@ class CopilotResolver(
         )
     }
 
+    private suspend fun resolveReviewedPulls(organization: String,
+                                             since: LocalDate,
+                                             until: LocalDate): List<PullRequest> {
+        val reviewedPulls = mutableListOf<PullRequest>()
+        var page = 1
+        while (page < MAX_PAGES) {
+            val urlBuilder = URLBuilder().apply {
+                protocol = io.ktor.http.URLProtocol.HTTPS
+                host = "api.github.com"
+                path("search", "issues")
+                encodedParameters = ParametersBuilder().apply {
+                    val query = "org:$organization is:pr involves:$COPILOT_REVIEWER_BOT_LOGIN created:${since}..${until}"
+                    append("q", query.encodeURLParameter(spaceToPlus = false))
+                    append("per_page", PAGE_SIZE.toString())
+                    append("page", page.toString())
+                }
+            }
+            val pulls = client.get(urlBuilder.buildString()).body<SearchResult<PullRequest>>().items
+
+            if (pulls.isEmpty())
+                break
+
+            reviewedPulls.addAll(pulls)
+
+            page++
+        }
+        return reviewedPulls
+    }
+
     suspend fun resolve(organization: String, since: LocalDate, until: LocalDate): List<CopilotStats> {
         val copilotStats = mutableListOf<CopilotStats>()
 
         val copilotOrgDays = resolveDays(organization, since = since, until = until)
         copilotStats.add(copilotOrgDays.summarize(organization))
 
-        if (!copilotOrgDays.isEmpty()) {
-            teamsResolver.resolve(organization).map { team ->
-                val copilotTeamDays = resolveDays(organization, team.slug, since, until)
-                copilotStats.add(copilotTeamDays.summarize(organization, team.slug))
-            }
+        teamsResolver.resolve(organization).map { team ->
+            val copilotTeamDays = if (copilotOrgDays.isEmpty()) emptyList() else
+                resolveDays(organization, team.slug, since, until)
+            copilotStats.add(copilotTeamDays.summarize(organization, team.slug))
         }
+
+        resolveReviewedPulls(organization, since, until)
+            .groupBy { it.user?.login }
+            .filter { it.key != null }
+            .forEach { (key, _) ->
+                teamsResolver.resolveUserTeams(organization, login = key!!)
+                    .map { team -> copilotStats.filter { it.team == team }.forEach { stats ->
+                        stats.codeReview.prsReviewed++
+                    } }
+            }
 
         return copilotStats
     }
@@ -112,8 +155,9 @@ class CopilotResolver(
     companion object {
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
-        private val EARLIEST_ORG_STATS = LocalDate.parse("2025-08-16")
-        private val EARLIEST_TEAM_STATS = LocalDate.parse("2025-10-27")
+        private val EARLIEST_ORG_STATS = LocalDate.parse("2025-08-17")
+        private val EARLIEST_TEAM_STATS = LocalDate.parse("2025-10-28")
+        const val COPILOT_REVIEWER_BOT_LOGIN = "copilot-pull-request-reviewer[bot]"
     }
 }
 
@@ -123,12 +167,24 @@ data class CopilotStats(
     val daysActive: Int = 0,
     val dailyActiveUsers: Double = 0.0,
     val dailyEngagedUsers: Double = 0.0,
-    val codeCompletion: CopilotCodeCompletionStats? = null,
+    val codeCompletion: CopilotCodeCompletionStats = CopilotCodeCompletionStats(),
+    val codeReview: CopilotCodeReviewStats = CopilotCodeReviewStats(),
 )
 
 data class CopilotCodeCompletionStats(
     val codeBlocksAccepted: Int = 0,
     val codeLinesAccepted: Int = 0,
+)
+
+data class CopilotCodeReviewStats(
+    var prsReviewed: Int = 0
+)
+
+@Serializable
+data class SearchResult<T>(
+    @SerialName("total_count")
+    val totalCount: Int,
+    val items: List<T>
 )
 
 @Serializable
