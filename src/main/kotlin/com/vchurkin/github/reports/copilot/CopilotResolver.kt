@@ -30,9 +30,11 @@ class CopilotResolver(
             val copilotDaysPage = try {
                 val orgAndTeam = if (team != null) "$organization/team/$team" else organization
                 val cappedSince = if (team != null) {
-                    if (since.isBefore(EARLIEST_TEAM_STATS)) EARLIEST_TEAM_STATS else since
+                    val earliest = LocalDate.now().minusDays(TEAM_STATS_DEPTH_DAYS)
+                    if (since.isBefore(earliest)) earliest else since
                 } else {
-                    if (since.isBefore(EARLIEST_ORG_STATS)) EARLIEST_ORG_STATS else since
+                    val earliest = LocalDate.now().minusDays(ORG_STATS_DEPTH_DAYS)
+                    if (since.isBefore(earliest)) earliest else since
                 }
                 if (!until.isAfter(cappedSince)) {
                     return emptyList()
@@ -155,8 +157,8 @@ class CopilotResolver(
     companion object {
         const val PAGE_SIZE = 100
         const val MAX_PAGES = 1000
-        private val EARLIEST_ORG_STATS = LocalDate.parse("2025-08-17")
-        private val EARLIEST_TEAM_STATS = LocalDate.parse("2025-10-28")
+        const val ORG_STATS_DEPTH_DAYS = 99L
+        const val TEAM_STATS_DEPTH_DAYS = 27L
         const val COPILOT_REVIEWER_BOT_LOGIN = "copilot-pull-request-reviewer[bot]"
     }
 }
