@@ -35,8 +35,8 @@ suspend fun main() {
         ?: OUTPUT_DIR_DEFAULT
 
     try {
-//        codeowners(envProperties, client, outputDir)
-//        contributions(envProperties, client, outputDir)
+        codeowners(envProperties, client, outputDir)
+        contributions(envProperties, client, outputDir)
         copilot(envProperties, client, outputDir)
     } catch (e: Exception) {
         println("Error: ${e.message}")
